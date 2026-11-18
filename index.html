@@ -74,6 +74,16 @@
           <div class="panel"><div class="panel-head"><div><h2>Registros de pesquisa</h2><p>Histórico de observações inseridas no banco</p></div></div><div class="empty" id="chartEmpty">Ainda não existem pesquisas para gerar um gráfico. Cadastre observações na etapa de coleta.</div><canvas id="researchChart" height="130" class="hidden"></canvas></div>
           <div class="panel"><div class="panel-head"><div><h2>Base territorial</h2><p>Municípios cadastrados</p></div></div><div id="locationPreview" class="empty">Carregando municípios…</div></div>
         </div>
+        <div class="grid2">
+          <div class="panel">
+            <div class="panel-head"><div><h2>Ranking de produtos</h2><p>Produtos com mais sinais registrados, excluindo testes</p></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Posição</th><th>Produto</th><th>Sinais</th></tr></thead><tbody id="productRankingRows"><tr><td colspan="3">Carregando…</td></tr></tbody></table></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Ranking por município</h2><p>Municípios com mais sinais registrados, excluindo testes</p></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Posição</th><th>Município</th><th>Sinais</th></tr></thead><tbody id="municipalityRankingRows"><tr><td colspan="3">Carregando…</td></tr></tbody></table></div>
+          </div>
+        </div>
       </section>
       <section id="products" class="section">
         <div class="panel"><div class="panel-head"><div><h2>Catálogo de produtos</h2><p>Produtos cadastrados para monitoramento</p></div></div><div class="filters"><input id="productSearch" placeholder="Buscar produto…"><select id="categoryFilter"><option value="">Todas as categorias</option></select></div><div class="table-wrap"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Status</th></tr></thead><tbody id="productRows"><tr><td colspan="3">Carregando…</td></tr></tbody></table></div></div>
@@ -143,7 +153,7 @@
       client.from('municipios').select('id,nome,regiao').order('nome'),
       client.from('categorias').select('id,nome').order('nome'),
       client.from('produtos').select('id,nome,categoria_id,ativo').order('nome'),
-      client.from('pesquisas').select('id,produto_id,municipio_id,fonte_id,data_pesquisa,interesse,preco,observacoes,tipo_sinal,evidencia_url').order('data_pesquisa',{ascending:false}),
+      client.from('pesquisas').select('id,produto_id,municipio_id,fonte_id,data_pesquisa,interesse,preco,observacoes,tipo_sinal,evidencia_url,is_teste').order('data_pesquisa',{ascending:false}),
       client.from('fontes').select('id,nome,tipo,endereco').order('nome')
     ]);
     const err = [mun,cat,prod,research,sources].find(x=>x.error);
@@ -153,8 +163,8 @@
     $('municipalityCount').textContent = municipalitiesCache.length;
     $('categoryCount').textContent = categoriesCache.length;
     $('productCount').textContent = productsCache.length;
-    $('researchCount').textContent = researchCache.length;
-    renderLocations(); renderProducts(); renderResearch(); populateResearchOptions();
+    $('researchCount').textContent = researchCache.filter(r=>r.is_teste !== true).length;
+    renderLocations(); renderProducts(); renderResearch(); renderRankings(); populateResearchOptions();
     $('appStatus').textContent = 'Dados carregados com sucesso. Última atualização: ' + new Date().toLocaleString('pt-BR');
   }
   function renderLocations() {
@@ -183,75 +193,19 @@
       const municipality = municipalitiesCache.find(m=>m.id===r.municipio_id)?.nome || '—';
       const source = sourcesCache.find(f=>f.id===r.fonte_id)?.nome || '—';
       const price = r.preco == null ? '—' : Number(r.preco).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-      return `<tr><td>${escapeHtml(r.data_pesquisa || '—')}</td><td>${escapeHtml(product)}</td><td>${escapeHtml(municipality)}</td><td>${escapeHtml(r.tipo_sinal || '—')}</td><td>${escapeHtml(r.interesse ?? '—')}/5</td><td>${escapeHtml(price)}</td><td>${escapeHtml(source)}</td></tr>`;
+      return `<tr${r.is_teste===true?' style="background:#fff8e8"':''}><td>${escapeHtml(r.data_pesquisa || '—')}</td><td>${escapeHtml(product)}${r.is_teste===true?' <span class="tag" style="background:#fff0d8;color:#80551c">TESTE</span>':''}</td><td>${escapeHtml(municipality)}</td><td>${escapeHtml(r.tipo_sinal || '—')}</td><td>${escapeHtml(r.interesse ?? '—')}/5</td><td>${escapeHtml(price)}</td><td>${escapeHtml(source)}</td></tr>`;
     }).join('');
     $('researchRows').innerHTML = rows || '<tr><td colspan="7">Nenhuma observação registrada ainda.</td></tr>';
     if (researchCache.length) { $('chartEmpty').textContent = 'Existem observações registradas. O gráfico analítico será habilitado em uma próxima atualização.'; }
     else { $('chartEmpty').textContent = 'Ainda não existem pesquisas para gerar um gráfico. Registre observações na etapa de coleta.'; }
   }
-  $('researchForm').addEventListener('submit', async e=>{
-    e.preventDefault();
-    const button = $('saveResearchButton'), message = $('researchMessage');
-    button.disabled = true; button.textContent = 'Salvando…'; message.textContent = '';
-    try {
-      const sourceName = $('sourceName').value.trim();
-      const sourceType = $('sourceType').value;
-      const {data: sourceData,error: sourceError} = await client.from('fontes').upsert({nome:sourceName,tipo:sourceType},{onConflict:'nome'}).select('id').single();
-      if (sourceError) throw sourceError;
-      const priceValue = $('researchPrice').value;
-      const evidence = $('evidenceUrl').value.trim();
-      const record = {
-        produto_id: Number($('researchProduct').value),
-        municipio_id: Number($('researchMunicipality').value),
-        fonte_id: sourceData.id,
-        data_pesquisa: $('researchDate').value,
-        interesse: Number($('signalStrength').value),
-        preco: priceValue === '' ? null : Number(priceValue),
-        observacoes: $('researchNotes').value.trim(),
-        tipo_sinal: $('signalType').value,
-        evidencia_url: evidence || null
-      };
-      const {error} = await client.from('pesquisas').insert(record);
-      if (error) throw error;
-      $('researchForm').reset();
-      $('researchDate').value = new Date().toISOString().slice(0,10);
-      message.textContent = 'Observação salva com sucesso!'; message.style.color = '#16734b';
-      await loadData();
-    } catch(err) {
-      message.textContent = 'Não foi possível salvar: ' + (err.message || 'verifique a conexão e as políticas do banco.');
-      message.style.color = '#a52c2c';
-    } finally { button.disabled = false; button.textContent = 'Salvar observação'; }
-  });
+  function renderRankings() {
+    const valid = researchCache.filter(r => r.is_teste !== true);
+    const productTotals = new Map();
+    const municipalityTotals = new Map();
 
-  function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-  $('loginForm').addEventListener('submit', async e=>{
-    e.preventDefault(); $('loginButton').disabled=true; $('loginButton').textContent='Entrando…';
-    try {
-      const {data,error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
-      if(error) throw error;
-      if(data.user.id !== ADMIN_UID) { await client.auth.signOut(); throw new Error('Esta conta não está autorizada para administrar o Radar Marajó.'); }
-      showApp(data.user); await loadData(data.user);
-    } catch(err) { showLogin(err.message || 'Não foi possível entrar. Confira suas credenciais.'); }
-    finally { $('loginButton').disabled=false; $('loginButton').textContent='Entrar no Radar'; }
-  });
-  $('logoutButton').addEventListener('click', async()=>{await client.auth.signOut();showLogin();});
-  $('productSearch').addEventListener('input',renderProducts);
-  $('categoryFilter').addEventListener('change',renderProducts);
-  document.querySelectorAll('.nav button').forEach(btn=>btn.addEventListener('click',()=>{
-    document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b===btn));
-    document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id===btn.dataset.section));
-    $('pageTitle').textContent = ({overview:'Visão geral',products:'Produtos',locations:'Municípios',research:'Pesquisas'})[btn.dataset.section];
-  }));
-  async function init() {
-    const {data:{session}}=await client.auth.getSession();
-    if(!session) return showLogin();
-    if(session.user.id !== ADMIN_UID) { await client.auth.signOut(); return showLogin('Esta conta não está autorizada.'); }
-    showApp(session.user);
-    try { await loadData(session.user); }
-    catch(err) { $('appStatus').textContent='Erro ao carregar dados: '+(err.message || 'verifique as políticas RLS e a conexão.'); }
-  }
-  init();
-</script>
-</body>
-</html>
+    valid.forEach(r => {
+      const productName = productsCache.find(p => p.id === r.produto_id)?.nome || 'Produto removido';
+      const municipalityName = municipalitiesCache.find(m => m.id === r.municipio_id)?.nome || 'Município não informado';
+      productTotals.set(productName, (productTotals.get(productName) || 0) + 1);
+      municipalityTotals.set(municipalityName, (m
