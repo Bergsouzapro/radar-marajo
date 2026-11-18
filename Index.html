@@ -218,40 +218,4 @@
       message.textContent = 'Observação salva com sucesso!'; message.style.color = '#16734b';
       await loadData();
     } catch(err) {
-      message.textContent = 'Não foi possível salvar: ' + (err.message || 'verifique a conexão e as políticas do banco.');
-      message.style.color = '#a52c2c';
-    } finally { button.disabled = false; button.textContent = 'Salvar observação'; }
-  });
-
-  function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-  $('loginForm').addEventListener('submit', async e=>{
-    e.preventDefault(); $('loginButton').disabled=true; $('loginButton').textContent='Entrando…';
-    try {
-      const {data,error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
-      if(error) throw error;
-      if(data.user.id !== ADMIN_UID) { await client.auth.signOut(); throw new Error('Esta conta não está autorizada para administrar o Radar Marajó.'); }
-      showApp(data.user); await loadData(data.user);
-    } catch(err) { showLogin(err.message || 'Não foi possível entrar. Confira suas credenciais.'); }
-    finally { $('loginButton').disabled=false; $('loginButton').textContent='Entrar no Radar'; }
-  });
-  $('logoutButton').addEventListener('click', async()=>{await client.auth.signOut();showLogin();});
-  $('productSearch').addEventListener('input',renderProducts);
-  $('categoryFilter').addEventListener('change',renderProducts);
-  document.querySelectorAll('.nav button').forEach(btn=>btn.addEventListener('click',()=>{
-    document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b===btn));
-    document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id===btn.dataset.section));
-    $('pageTitle').textContent = ({overview:'Visão geral',products:'Produtos',locations:'Municípios',research:'Pesquisas'})[btn.dataset.section];
-  }));
-  async function init() {
-    const {data:{session}}=await client.auth.getSession();
-    if(!session) return showLogin();
-    if(session.user.id !== ADMIN_UID) { await client.auth.signOut(); return showLogin('Esta conta não está autorizada.'); }
-    showApp(session.user);
-    try { await loadData(session.user); }
-    catch(err) { $('appStatus').textContent='Erro ao carregar dados: '+(err.message || 'verifique as políticas RLS e a conexão.'); }
-  }
-  init();
-</script>
-</body>
-</html>
+      message.textContent = 'Não foi possível salvar: ' + (err.message || 'verifique a conexão e as políticas do banco.')
